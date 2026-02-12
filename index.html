@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Armonía Negativa Pro - Procesamiento Profundo</title>
+    <title>Armonía Negativa Pro - Procesamiento Híbrido</title>
     
     <!-- Librerías Externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Cargamos @tonejs/midi desde una fuente confiable -->
     <script src="https://unpkg.com/@tonejs/midi@2.0.28/build/Midi.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@magenta/music@1.23.1/dist/magentamusic.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
         
@@ -46,17 +45,49 @@
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
-
-        /* Estilo para deshabilitar botones */
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            filter: grayscale(1);
+        
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #fff; cursor: pointer; margin-top: -6px;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer;
+            background: rgba(255, 255, 255, 0.1); border-radius: 2px;
         }
     </style>
 </head>
 <body>
-    <div class="glass-panel w-full max-w-2xl rounded-[2.5rem] p-6 md:p-10 relative overflow-hidden">
+
+    <!-- PANTALLA DE SELECCIÓN DE MODO -->
+    <div id="mode-selector" class="glass-panel w-full max-w-md rounded-[2rem] p-6 md:p-10 text-center transition-all duration-500">
+        <h1 class="text-3xl font-black mb-2 text-slate-100">Elige un modo de operación</h1>
+        <p class="text-slate-400 mb-8">Selecciona cómo quieres usar la herramienta.</p>
+        <div class="space-y-4">
+            <button id="mode-with-player" class="w-full bg-indigo-600 hover:bg-indigo-500 transition-colors p-6 rounded-2xl text-left">
+                <div class="flex items-center gap-4">
+                    <i class="fas fa-play-circle text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold text-lg">Con Reproductor</h3>
+                        <p class="text-sm text-indigo-200">Procesa y previsualiza cada archivo.</p>
+                    </div>
+                </div>
+            </button>
+            <button id="mode-without-player" class="w-full bg-slate-800 hover:bg-slate-700 transition-colors p-6 rounded-2xl text-left">
+                <div class="flex items-center gap-4">
+                    <i class="fas fa-bolt text-2xl"></i>
+                    <div>
+                        <h3 class="font-bold text-lg">Sin Reproductor (Rápido)</h3>
+                        <p class="text-sm text-slate-400">Solo convierte el lote y descarga el ZIP.</p>
+                    </div>
+                </div>
+            </button>
+        </div>
+    </div>
+    
+    <!-- APLICACIÓN PRINCIPAL (OCULTA INICIALMENTE) -->
+    <div id="app-container" class="hidden glass-panel w-full max-w-2xl rounded-[2rem] p-6 md:p-10 relative overflow-hidden">
         <div class="absolute -top-24 -right-24 w-80 h-80 bg-indigo-600/20 rounded-full blur-[100px]"></div>
         <div class="absolute -bottom-24 -left-24 w-80 h-80 bg-pink-600/20 rounded-full blur-[100px]"></div>
         
@@ -77,18 +108,18 @@
                     <i class="fas fa-file-audio text-3xl text-indigo-400"></i>
                 </div>
                 <span class="text-xl font-bold text-slate-200">Subir Archivos MIDI</span>
-                <span class="text-xs text-slate-500 mt-3 font-medium text-center">Haz clic o arrastra tus archivos aquí para comenzar el procesamiento</span>
+                <span class="text-xs text-slate-500 mt-3 font-medium">Haz clic o arrastra tus archivos aquí</span>
             </label>
         </div>
 
         <!-- PASO 2: GESTIÓN DE COLA -->
-        <div id="step-2" class="hidden relative z-10 flex flex-col min-h-[400px]">
+        <div id="step-2" class="hidden relative z-10 flex flex-col h-[500px]">
             <div class="flex justify-between items-center mb-4 px-2">
                 <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Archivos en Cola</h3>
                 <span id="queue-count" class="text-[10px] font-bold bg-white/5 px-3 py-1 rounded-full border border-white/10">0</span>
             </div>
             
-            <div id="file-queue" class="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-3 mb-6 max-h-[300px]"></div>
+            <div id="file-queue" class="flex-1 overflow-y-auto custom-scrollbar space-y-2.5 pr-3 mb-6"></div>
             
             <div id="processing-progress" class="hidden mb-6 px-2">
                 <div class="flex justify-between text-[10px] text-slate-400 mb-2 uppercase font-bold tracking-tighter">
@@ -104,7 +135,7 @@
                 <button id="process-all-btn" class="btn-magic col-span-2 py-5 rounded-2xl text-white font-black shadow-xl flex items-center justify-center gap-3">
                     <i class="fas fa-gears"></i> PROCESAR LOTE
                 </button>
-                <button id="download-zip-btn" class="hidden bg-emerald-600 hover:bg-emerald-500 py-4 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-all shadow-lg">
+                <button id="download-zip-btn" class="hidden bg-emerald-500 hover:bg-emerald-400 py-4 rounded-xl text-white font-bold flex items-center justify-center gap-2 transition-all shadow-lg">
                     <i class="fas fa-file-zipper"></i> DESCARGAR ZIP
                 </button>
                 <button id="clear-queue-btn" class="bg-slate-800 hover:bg-slate-700 py-4 rounded-xl text-slate-300 font-bold flex items-center justify-center gap-2 transition-colors">
@@ -112,26 +143,94 @@
                 </button>
             </div>
         </div>
+
+        <!-- REPRODUCTOR (SOLO MODO CON REPRODUCTOR) -->
+        <div id="player-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/95 backdrop-blur-lg">
+            <div class="glass-panel w-full max-w-sm rounded-[2.5rem] p-8 border border-white/20 shadow-2xl">
+                <div class="text-center mb-8">
+                    <div class="mb-4 inline-block p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                        <i class="fas fa-music text-3xl"></i>
+                    </div>
+                    <h4 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">Previsualización</h4>
+                    <p id="preview-name" class="text-sm font-semibold text-white truncate px-4"></p>
+                </div>
+                <div class="space-y-6">
+                    <button id="play-btn" class="w-full bg-white text-slate-950 py-4 rounded-2xl flex items-center justify-center gap-3 font-black hover:bg-indigo-50 transition-colors shadow-xl">
+                        <i id="play-icon" class="fas fa-play"></i> <span id="play-text">REPRODUCIR</span>
+                    </button>
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-[11px] font-mono text-slate-400">
+                            <span id="current-time">0:00</span>
+                            <span id="total-time">0:00</span>
+                        </div>
+                        <input type="range" id="seek-slider" min="0" max="100" value="0" step="0.01">
+                    </div>
+                    <div class="flex items-center gap-4 bg-white/5 p-3 rounded-2xl border border-white/5">
+                        <i class="fas fa-volume-high text-slate-500 text-xs"></i>
+                        <input type="range" id="volume-slider" min="-40" max="0" value="-6" step="1">
+                    </div>
+                    <button id="close-player" class="w-full py-2 text-slate-500 hover:text-white text-xs font-bold transition-colors">CERRAR</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
+        // -- ESTADO GLOBAL Y CONFIGURACIÓN --
+        let appMode = null; 
+        let player = null;
+
         const state = {
-            files: []
+            files: [], 
+            currentIndex: null,
+            playbackInterval: null,
+            startTime: 0,
+            pauseOffset: 0,
+            isSeeking: false
         };
 
         const elements = {
+            modeSelector: document.getElementById('mode-selector'),
+            appContainer: document.getElementById('app-container'),
             status: document.getElementById('status-area'),
             fileInput: document.getElementById('midi-input'),
             fileQueue: document.getElementById('file-queue'),
             zipBtn: document.getElementById('download-zip-btn'),
-            processBtn: document.getElementById('process-all-btn'),
+            playerModal: document.getElementById('player-modal'),
+            seekSlider: document.getElementById('seek-slider'),
             progressContainer: document.getElementById('processing-progress'),
             progressBar: document.getElementById('process-bar'),
             progressLabel: document.getElementById('process-label'),
-            progressPercent: document.getElementById('process-percent')
+            progressPercent: document.getElementById('process-percent'),
+            playBtn: document.getElementById('play-btn'),
+            playIcon: document.getElementById('play-icon'),
+            playText: document.getElementById('play-text'),
+            volumeSlider: document.getElementById('volume-slider')
         };
+        
+        // --- INICIALIZACIÓN DE LA APP ---
+        function initialize_app(mode) {
+            appMode = mode;
+            if (appMode === 'with-player') {
+                // Sonido de piano de alta calidad de Magenta
+                player = new mm.SoundFontPlayer('https://storage.googleapis.com/magentadata/js/soundfonts/sgm_plus');
+                
+                if (elements.volumeSlider) {
+                    elements.volumeSlider.oninput = (e) => {
+                        if (mm.Player.tone) {
+                            mm.Player.tone.Destination.volume.rampTo(parseFloat(e.target.value), 0.1);
+                        }
+                    };
+                }
+            }
+            elements.modeSelector.classList.add('hidden');
+            elements.appContainer.classList.remove('hidden');
+        }
 
-        // --- SUBIDA DE ARCHIVOS ---
+        document.getElementById('mode-with-player').onclick = () => initialize_app('with-player');
+        document.getElementById('mode-without-player').onclick = () => initialize_app('without-player');
+
+        // --- LÓGICA DE SUBIDA Y COLA ---
         elements.fileInput.onchange = async (e) => {
             const uploaded = Array.from(e.target.files);
             if (uploaded.length === 0) return;
@@ -142,24 +241,15 @@
                     name: file.name,
                     originalBuffer: buffer,
                     transformedBinary: null,
+                    noteSequence: null,
                     status: 'pending'
                 });
             }
-            
-            updateUI();
+            renderQueue();
+            document.getElementById('step-1').classList.add('hidden');
+            document.getElementById('step-2').classList.remove('hidden');
             elements.fileInput.value = "";
         };
-
-        function updateUI() {
-            if (state.files.length > 0) {
-                document.getElementById('step-1').classList.add('hidden');
-                document.getElementById('step-2').classList.remove('hidden');
-                renderQueue();
-            } else {
-                document.getElementById('step-1').classList.remove('hidden');
-                document.getElementById('step-2').classList.add('hidden');
-            }
-        }
 
         function renderQueue() {
             elements.fileQueue.innerHTML = '';
@@ -169,18 +259,24 @@
                 const div = document.createElement('div');
                 div.className = "bg-white/5 border border-white/5 rounded-2xl p-4 flex items-center justify-between group hover:bg-white/10 transition-all";
                 
-                let iconClass = "fa-clock text-slate-600";
-                if (file.status === 'done') iconClass = "fa-check-circle text-emerald-400";
-                if (file.status === 'error') iconClass = "fa-exclamation-triangle text-rose-500";
+                let playButtonHtml = '';
+                if (appMode === 'with-player' && file.status === 'done') {
+                    playButtonHtml = `
+                        <button onclick="previewFile(${i})" class="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors">
+                            <i class="fas fa-play text-xs"></i>
+                        </button>
+                    `;
+                }
 
                 div.innerHTML = `
                     <div class="flex items-center gap-3 overflow-hidden">
-                        <i class="fas ${iconClass} text-xs"></i>
+                        <i class="fas ${file.status === 'done' ? 'fa-check-circle text-emerald-400' : (file.status === 'error' ? 'fa-triangle-exclamation text-rose-400' : 'fa-clock text-slate-600')} text-xs"></i>
                         <span class="text-xs font-bold truncate text-slate-300">${file.name}</span>
                     </div>
                     <div class="flex gap-2">
-                        <button onclick="removeFile(${i})" class="w-8 h-8 rounded-lg bg-white/5 text-slate-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-colors">
-                            <i class="fas fa-times text-[10px]"></i>
+                        ${playButtonHtml}
+                        <button onclick="removeFile(${i})" class="w-9 h-9 rounded-xl bg-white/5 text-slate-500 flex items-center justify-center hover:bg-rose-500 hover:text-white transition-colors">
+                            <i class="fas fa-times text-xs"></i>
                         </button>
                     </div>
                 `;
@@ -189,146 +285,228 @@
         }
 
         // --- LÓGICA DE PROCESAMIENTO ---
-        elements.processBtn.onclick = async () => {
-            if (state.files.length === 0) return;
-
-            elements.processBtn.disabled = true;
+        document.getElementById('process-all-btn').onclick = async () => {
+            const btn = document.getElementById('process-all-btn');
+            btn.disabled = true;
             elements.progressContainer.classList.remove('hidden');
             elements.zipBtn.classList.add('hidden');
-
-            for (let i = 0; i < state.files.length; i++) {
-                const pct = Math.floor((i / state.files.length) * 100);
-                elements.progressBar.style.width = `${pct}%`;
-                elements.progressPercent.textContent = `${pct}%`;
-                elements.progressLabel.textContent = `Procesando: ${state.files[i].name}`;
-                
-                try {
-                    await transformMidiFile(i);
-                    state.files[i].status = 'done';
-                } catch (e) {
-                    console.error("Error al procesar:", state.files[i].name, e);
-                    state.files[i].status = 'error';
-                }
-                renderQueue();
+            
+            // Reanudar AudioContext si es necesario
+            if (appMode === 'with-player' && mm.Player.tone && mm.Player.tone.context.state !== 'running') {
+                await mm.Player.tone.context.resume();
             }
 
+            for (let i = 0; i < state.files.length; i++) {
+                if (state.files[i].status !== 'done') {
+                    const pct = Math.floor((i / state.files.length) * 100);
+                    elements.progressBar.style.width = `${pct}%`;
+                    elements.progressPercent.textContent = `${pct}%`;
+                    elements.progressLabel.textContent = `Procesando: ${state.files[i].name}`;
+                    
+                    try {
+                        await processSingleFile(i);
+                        state.files[i].status = 'done';
+                    } catch (e) {
+                        console.error(`Error processing ${state.files[i].name}:`, e);
+                        state.files[i].status = 'error';
+                    }
+                    renderQueue();
+                }
+            }
+            
             elements.progressBar.style.width = `100%`;
             elements.progressPercent.textContent = `100%`;
             elements.progressLabel.textContent = `Lote Completado`;
             
-            elements.processBtn.disabled = false;
+            btn.disabled = false;
             elements.zipBtn.classList.remove('hidden');
             showStatus("✨ PROCESAMIENTO FINALIZADO", "text-emerald-400");
         };
 
-        async function transformMidiFile(index) {
+        async function processSingleFile(index) {
             const file = state.files[index];
-            // Aseguramos que cargue el buffer correctamente con ToneJS Midi
             const midi = new Midi(file.originalBuffer);
+            const mapping = [];
 
-            // Algoritmo de Armonía Negativa (Eje Do-Sol -> Do-Fa)
-            // Inversión sobre el eje central del círculo de quintas
-            // En términos de MIDI: El eje es entre Mi3(64) y Mib3(63) aproximadamente,
-            // pero una fórmula común es: nota_nueva = (Nota_Eje * 2) - nota_original
-            // Para el eje Do-Sol, el centro es 3.5 (entre Mi y Mib).
-            
-            midi.tracks.forEach(track => {
-                // No procesar canales de percusión (usualmente canal 10 / index 9)
-                const isPercussion = track.channel === 9 || track.instrument.percussion;
-                if (!isPercussion) {
-                    track.notes.forEach(note => {
-                        // Implementación de inversión de espejo estándar
-                        // Eje Do/Sol: El centro es 63.5 (Mib/Mi) para la octava central
-                        // Usamos una constante de reflexión: 127 es el máximo, pero para mantener
-                        // la tesitura, calculamos la distancia al eje.
-                        
-                        let invertedMidi = 127 - note.midi; 
-                        
-                        // Ajuste de octava para que no suene demasiado agudo o grave respecto al original
-                        while (invertedMidi > note.midi + 18) invertedMidi -= 12;
-                        while (invertedMidi < note.midi - 18) invertedMidi += 12;
-                        
-                        note.midi = Math.max(0, Math.min(127, invertedMidi));
+            // 1. Transformación Negativa
+            // Eje de simetría: C4 (60) - Eb4/E4 (63.5)
+            midi.tracks.forEach((track, tid) => {
+                const isPerc = track.channel === 9 || track.instrument.percussion;
+                mapping[tid] = { prog: track.instrument.number, isPerc };
+                
+                if (!isPerc) {
+                    track.notes.forEach(n => {
+                        // Algoritmo de inversión de eje
+                        let inv = 127 - n.midi;
+                        // Ajuste de octava para mantener rango similar al original
+                        while (inv > n.midi + 12) inv -= 12;
+                        while (inv < n.midi - 12) inv += 12;
+                        n.midi = Math.max(0, Math.min(127, inv));
                     });
                 }
             });
-
             file.transformedBinary = midi.toArray();
+
+            // 2. Pasos extra para el reproductor
+            if (appMode === 'with-player') {
+                const blob = new Blob([file.transformedBinary], { type: 'audio/midi' });
+                const ns = await mm.blobToNoteSequence(blob);
+                
+                if (ns.notes.length > 0) {
+                    const offset = Math.min(...ns.notes.map(n => n.startTime));
+                    ns.notes.forEach(n => {
+                        const m = mapping[n.instrument];
+                        if (m) {
+                            n.isDrum = m.isPerc;
+                            if (!m.isPerc) n.program = m.prog;
+                        }
+                        n.startTime -= offset;
+                        n.endTime -= offset;
+                    });
+                    ns.totalTime -= offset;
+                }
+                file.noteSequence = ns;
+                // Pre-carga de samples para evitar delay en el primer clic
+                await player.loadSamples(file.noteSequence);
+            }
         }
+
+        // --- REPRODUCTOR ---
+        window.previewFile = (index) => {
+            if (appMode !== 'with-player') return;
+            stopPlayback();
+            state.currentIndex = index;
+            state.pauseOffset = 0;
+            const file = state.files[index];
+            
+            document.getElementById('preview-name').textContent = file.name;
+            document.getElementById('total-time').textContent = formatTime(file.noteSequence.totalTime);
+            elements.seekSlider.max = file.noteSequence.totalTime;
+            elements.seekSlider.value = 0;
+            document.getElementById('current-time').textContent = "0:00";
+            
+            elements.playerModal.classList.remove('hidden');
+        };
+
+        if (elements.playBtn) {
+            elements.playBtn.onclick = () => {
+                if (!player) return;
+                if (player.isPlaying()) {
+                    state.pauseOffset = parseFloat(elements.seekSlider.value);
+                    stopPlayback();
+                } else {
+                    startPlayback(state.pauseOffset);
+                }
+            };
+        }
+
+        async function startPlayback(time = 0) {
+            const file = state.files[state.currentIndex];
+            elements.playIcon.className = "fas fa-stop";
+            elements.playText.textContent = "DETENER";
+            
+            let seq = file.noteSequence;
+            if (time > 0.05) {
+                // Magenta trim tiene un pequeño bug con tiempos muy cortos, usamos un pequeño umbral
+                try {
+                    seq = mm.sequences.trim(file.noteSequence, time, file.noteSequence.totalTime);
+                } catch(e) {
+                    console.warn("Error al recortar secuencia:", e);
+                }
+            }
+            
+            player.start(seq).then(() => {
+                if (player.isPlaying() && !state.isSeeking) stopPlayback();
+            });
+
+            state.startTime = Date.now();
+            state.playbackInterval = setInterval(() => {
+                if (state.isSeeking) return;
+                const current = time + (Date.now() - state.startTime) / 1000;
+                if (current < file.noteSequence.totalTime) {
+                    elements.seekSlider.value = current;
+                    document.getElementById('current-time').textContent = formatTime(current);
+                } else {
+                    stopPlayback();
+                }
+            }, 100);
+        }
+
+        function stopPlayback() {
+            if (!player) return;
+            player.stop();
+            if (state.playbackInterval) clearInterval(state.playbackInterval);
+            elements.playIcon.className = "fas fa-play";
+            elements.playText.textContent = "REPRODUCIR";
+        }
+        
+        elements.seekSlider.onmousedown = () => state.isSeeking = true;
+        elements.seekSlider.onmouseup = () => {
+            state.isSeeking = false;
+            const pos = parseFloat(elements.seekSlider.value);
+            state.pauseOffset = pos;
+            if (player && player.isPlaying()) {
+                stopPlayback();
+                startPlayback(pos);
+            }
+        };
+
+        document.getElementById('close-player').onclick = () => {
+            stopPlayback();
+            elements.playerModal.classList.add('hidden');
+        };
 
         // --- DESCARGA Y LIMPIEZA ---
         elements.zipBtn.onclick = async () => {
             const zip = new JSZip();
             let count = 0;
-
-            state.files.forEach((f) => {
-                if (f.status === 'done' && f.transformedBinary) {
-                    zip.file(`NEGATIVE_${f.name}`, f.transformedBinary);
+            state.files.forEach((f, i) => {
+                if (f.status === 'done') {
+                    zip.file(`NEG_${f.name}`, f.transformedBinary);
                     count++;
                 }
             });
-
-            if (count === 0) {
-                showStatus("⚠️ NO HAY ARCHIVOS PROCESADOS", "text-amber-400");
-                return;
-            }
+            
+            if (count === 0) return;
 
             const content = await zip.generateAsync({type:"blob"});
             const link = document.createElement("a");
             link.href = URL.createObjectURL(content);
             link.download = `Batch_Armonia_Negativa_${new Date().getTime()}.zip`;
             link.click();
-            URL.revokeObjectURL(link.href);
         };
 
         window.removeFile = (i) => {
+            if (state.currentIndex === i) stopPlayback();
             state.files.splice(i, 1);
-            updateUI();
             if (state.files.length === 0) {
-                elements.status.textContent = "";
+                document.getElementById('step-2').classList.add('hidden');
+                document.getElementById('step-1').classList.remove('hidden');
             }
+            renderQueue();
         };
 
         document.getElementById('clear-queue-btn').onclick = () => {
+            stopPlayback();
             state.files = [];
-            updateUI();
+            document.getElementById('step-2').classList.add('hidden');
+            document.getElementById('step-1').classList.remove('hidden');
             elements.zipBtn.classList.add('hidden');
             elements.progressContainer.classList.add('hidden');
-            elements.status.textContent = "";
+            showStatus("", "");
         };
+
+        function formatTime(s) {
+            if (!s || s < 0) return "0:00";
+            const min = Math.floor(s / 60);
+            const sec = Math.floor(s % 60);
+            return `${min}:${sec.toString().padStart(2, '0')}`;
+        }
 
         function showStatus(msg, cls) {
             elements.status.textContent = msg;
             elements.status.className = `mb-6 text-center h-6 text-xs font-semibold transition-all ${cls}`;
         }
-
-        // Drag & Drop support
-        const dropZone = document.querySelector('label[for="midi-input"]');
-        
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
-        });
-
-        function preventDefaults (e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        dropZone.addEventListener('drop', async (e) => {
-            const dt = e.dataTransfer;
-            const files = Array.from(dt.files).filter(f => f.name.endsWith('.mid') || f.name.endsWith('.midi'));
-            
-            for (const file of files) {
-                const buffer = await file.arrayBuffer();
-                state.files.push({
-                    name: file.name,
-                    originalBuffer: buffer,
-                    transformedBinary: null,
-                    status: 'pending'
-                });
-            }
-            updateUI();
-        });
     </script>
 </body>
 </html>
